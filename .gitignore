@@ -1,0 +1,55 @@
+# Build artifacts
+bin/
+gen/
+out/
+build/
+.gradle/
+app/build/
+
+# Kotlin and Gradle
+.kotlin/
+kotlin-bin/
+
+# IDE - Android Studio / IntelliJ
+.idea/
+*.iml
+*.iws
+*.ipr
+.navigation/
+/.idea/workspace.xml
+/.idea/tasks.xml
+/.idea/gradle.xml
+/.idea/assetWizardSettings.xml
+/.idea/dictionaries
+/.idea/libraries
+/.idea/caches
+/.idea/navEditor.xml
+
+# Keystore / Signing files (Penting untuk Keamanan)
+*.jks
+*.keystore
+*.p12
+*.key
+*.pem
+google-services.json
+
+# Local configuration
+local.properties
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+Thumbs.db
+Desktop.ini
+
+# Log files
+*.log
+
+# Project specific / Temporary tools
+cfr.jar
+recovered.java
+fix_analytics.py
+captures/
+.externalNativeBuild
+.cxx
