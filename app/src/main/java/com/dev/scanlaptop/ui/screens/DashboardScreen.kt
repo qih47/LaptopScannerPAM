@@ -195,6 +195,7 @@ fun DashboardScreen(
         if (timeFilter != newFilter) {
             timeFilter = newFilter
         }
+        dashboardViewModel.loadAnalyticsData(miniChartPeriod)
     }
 
     var showFilterSheet by remember { mutableStateOf(false) }
@@ -226,7 +227,6 @@ fun DashboardScreen(
         dashboardViewModel.loadHistory()
         dashboardViewModel.startRealtimeSubscription()
         overdueViewModel.loadOverdue()
-        dashboardViewModel.loadAnalyticsData() // fetch 7 hari penuh untuk analytics
     }
 
     // Refresh data saat pindah tab
@@ -492,7 +492,6 @@ fun DashboardScreen(
                         miniChartPeriod = miniChartPeriod,
                         onMiniPeriodChange = { period -> 
                             miniChartPeriod = period
-                            dashboardViewModel.loadAnalyticsData(period) 
                         }
                     )
                 }
@@ -710,7 +709,7 @@ fun HistoryContent(
                     modifier = Modifier.fillMaxWidth(),
                     selectedPeriod = miniChartPeriod,
                     isLoading = isAnalyticsLoading,
-                    onPeriodSelect = { miniChartPeriod = it }
+                    onPeriodSelect = { onMiniPeriodChange(it) }
                 )
             }
         }
