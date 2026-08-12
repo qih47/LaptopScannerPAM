@@ -66,7 +66,8 @@ fun AnalyticsScreen(
     isRefreshing: Boolean = false,
     isAnalyticsLoading: Boolean = false,
     onRefresh: () -> Unit = {},
-    onChartDaysChange: (Int) -> Unit = {}
+    onChartDaysChange: (Int) -> Unit = {},
+    onExportPdf: (LocalDate, LocalDate) -> Unit = { _, _ -> }
 ) {
     val context = LocalContext.current
     var chartDays by remember { mutableIntStateOf(7) }
@@ -297,6 +298,8 @@ fun AnalyticsScreen(
         Icon(Icons.Default.PictureAsPdf, contentDescription = "Export PDF")
     }
 
+    var showCustomDatePicker by remember { mutableStateOf(false) }
+
     if (showExportSheet) {
         ModalBottomSheet(
             onDismissRequest = { showExportSheet = false },
@@ -317,69 +320,110 @@ fun AnalyticsScreen(
                 Spacer(modifier = Modifier.height(16.dp))
 
                 val options = listOf(
-                    "Harian" to 0L,
-                    "Mingguan" to 7L,
-                    "Bulanan" to 30L,
-                    "Tahunan" to 365L
+                    "Harian (Hari Ini)" to 0L,
+                    "Mingguan (7 Hari Terakhir)" to 7L,
+                    "Bulanan (30 Hari Terakhir)" to 30L,
+                    "Tahunan (365 Hari Terakhir)" to 365L
                 )
 
                 options.forEach { (label, daysAgo) ->
                     TextButton(
                         onClick = {
                             showExportSheet = false
-                            exportPdfReport(context, historyList, label, daysAgo)
+                            val today = LocalDate.now(ZoneId.of("Asia/Jakarta"))
+                            val startDate = today.minusDays(daysAgo)
+                            onExportPdf(startDate, today)
                         },
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(vertical = 4.dp)
                     ) {
-                        Text("Rekap $label", fontSize = 16.sp, color = Color.Black)
+                        Text(label, fontSize = 16.sp, color = Color.Black)
                     }
+                }
+
+                TextButton(
+                    onClick = {
+                        showExportSheet = false
+                        showCustomDatePicker = true
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 4.dp)
+                        .background(Color(0xFFE8EAF6), RoundedCornerShape(8.dp))
+                ) {
+                    Text("Pilih Rentang Kustom...", fontSize = 16.sp, color = Color(0xFF1A237E), fontWeight = FontWeight.Bold)
                 }
             }
         }
     }
+
+    if (showCustomDatePicker) {
+        val dateRangePickerState = androidx.compose.material3.rememberDateRangePickerState()
+
+        androidx.compose.material3.DatePickerDialog(
+            onDismissRequest = { showCustomDatePicker = false },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val startMillis = dateRangePickerState.selectedStartDateMillis
+                        val endMillis = dateRangePickerState.selectedEndDateMillis
+                        if (startMillis != null && endMillis != null) {
+                            val startDate = java.time.Instant.ofEpochMilli(startMillis).atZone(java.time.ZoneId.of("UTC")).toLocalDate()
+                            val endDate = java.time.Instant.ofEpochMilli(endMillis).atZone(java.time.ZoneId.of("UTC")).toLocalDate()
+                            showCustomDatePicker = false
+                            onExportPdf(startDate, endDate)
+                        } else {
+                            android.widget.Toast.makeText(context, "Pilih tanggal mulai dan akhir", android.widget.Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                ) {
+                    Text("GENERATE PDF", fontWeight = FontWeight.Bold, color = Color(0xFF1A237E))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showCustomDatePicker = false }) {
+                    Text("BATAL", color = Color.Gray)
+                }
+            },
+            colors = androidx.compose.material3.DatePickerDefaults.colors(containerColor = Color.White)
+        ) {
+            androidx.compose.material3.DateRangePicker(
+                state = dateRangePickerState,
+                title = { Text(text = "Pilih Rentang Tanggal", modifier = Modifier.padding(start = 24.dp, top = 24.dp, bottom = 8.dp), fontWeight = FontWeight.Black, color = Color(0xFF1A237E)) },
+                headline = {
+                    androidx.compose.material3.DateRangePickerDefaults.DateRangePickerHeadline(
+                        selectedStartDateMillis = dateRangePickerState.selectedStartDateMillis,
+                        selectedEndDateMillis = dateRangePickerState.selectedEndDateMillis,
+                        displayMode = dateRangePickerState.displayMode,
+                        dateFormatter = androidx.compose.material3.DatePickerDefaults.dateFormatter(),
+                        modifier = Modifier.fillMaxWidth().padding(start = 24.dp, bottom = 12.dp)
+                    )
+                },
+                modifier = Modifier.weight(1f),
+                colors = androidx.compose.material3.DatePickerDefaults.colors(
+                    containerColor = Color.White,
+                    titleContentColor = Color(0xFF1A237E),
+                    headlineContentColor = Color(0xFF1A237E),
+                    weekdayContentColor = Color.Black,
+                    subheadContentColor = Color.Black,
+                    yearContentColor = Color.Black,
+                    currentYearContentColor = Color(0xFF1A237E),
+                    selectedYearContentColor = Color.White,
+                    selectedYearContainerColor = Color(0xFF1A237E),
+                    dayContentColor = Color.Black,
+                    selectedDayContentColor = Color.White,
+                    selectedDayContainerColor = Color(0xFF1A237E),
+                    todayContentColor = Color(0xFF1A237E),
+                    todayDateBorderColor = Color(0xFF1A237E),
+                    dayInSelectionRangeContentColor = Color.Black,
+                    dayInSelectionRangeContainerColor = Color(0xFFE8EAF6)
+                )
+            )
+        }
+    }
 } // closes Box
 } // closes AnalyticsScreen
-
-private fun exportPdfReport(context: android.content.Context, fullList: List<HistoryLog>, rentang: String, daysAgo: Long) {
-    val zone = ZoneId.of("Asia/Jakarta")
-    val today = LocalDate.now(zone)
-    val startDate = today.minusDays(daysAgo)
-    
-    val filteredList = if (daysAgo == 0L) {
-        fullList.filter { parseTimestampLocal(it.created_at)?.toLocalDate() == today }
-    } else {
-        fullList.filter { 
-            val logDate = parseTimestampLocal(it.created_at)?.toLocalDate()
-            logDate != null && !logDate.isBefore(startDate) && !logDate.isAfter(today)
-        }
-    }
-
-    if (filteredList.isEmpty()) {
-        Toast.makeText(context, "Tidak ada data untuk rentang waktu ini", Toast.LENGTH_SHORT).show()
-        return
-    }
-
-    val dateFormatter = DateTimeFormatter.ofPattern("dd MMM yyyy", Locale("id", "ID"))
-    val dateTitle = if (daysAgo == 0L) {
-        today.format(dateFormatter)
-    } else {
-        "${startDate.format(dateFormatter)} - ${today.format(dateFormatter)}"
-    }
-
-    val uri = PdfGenerator.generateReport(context, filteredList, rentang, dateTitle)
-    if (uri != null) {
-        val shareIntent = Intent(Intent.ACTION_SEND).apply {
-            type = "application/pdf"
-            putExtra(Intent.EXTRA_STREAM, uri)
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-        }
-        context.startActivity(Intent.createChooser(shareIntent, "Bagikan Laporan PDF"))
-    } else {
-        Toast.makeText(context, "Gagal membuat PDF", Toast.LENGTH_SHORT).show()
-    }
-}
 
 // ─────────────────────────────────────────────────────────────
 // Canvas Bar Chart

@@ -25,6 +25,8 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.mapNotNull
 import kotlinx.serialization.Serializable
 import java.time.LocalDate
+import java.time.ZoneId
+import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
 
 /** Model sederhana untuk decode event INSERT dari Supabase Realtime.
@@ -193,10 +195,11 @@ class MonitoringRepository {
      */
     suspend fun fetchRecentLogs(daysBack: Int = 7): List<HistoryLog> {
         return try {
-            val now = LocalDate.now()
-            val formatter = DateTimeFormatter.ISO_LOCAL_DATE
             val startDate = if (daysBack > 0 && daysBack < 365) {
-                "${now.minusDays(daysBack.toLong()).format(formatter)}T00:00:00Z"
+                val zdt = ZonedDateTime.now(ZoneId.of("Asia/Jakarta"))
+                    .minusDays(daysBack.toLong())
+                    .truncatedTo(java.time.temporal.ChronoUnit.DAYS)
+                zdt.toInstant().toString()
             } else null
 
             val allLogs = mutableListOf<HistoryLog>()
@@ -223,6 +226,48 @@ class MonitoringRepository {
             allLogs
         } catch (e: Exception) {
             Log.e(TAG, "fetchRecentLogs error: ${e.message}")
+            emptyList()
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────
+
+    /**
+     * Ambil transaksi untuk ekspor PDF berdasarkan rentang tanggal.
+     * endDate bersifat inklusif.
+     */
+    suspend fun fetchLogsByDateRange(startDate: LocalDate, endDate: LocalDate): List<HistoryLog> {
+        return try {
+            val startZdt = startDate.atStartOfDay(ZoneId.of("Asia/Jakarta"))
+            val endZdt = endDate.plusDays(1).atStartOfDay(ZoneId.of("Asia/Jakarta"))
+            val formatter = DateTimeFormatter.ISO_INSTANT
+
+            val startUtcStr = startZdt.toInstant().toString()
+            val endUtcStr = endZdt.toInstant().toString()
+
+            val allLogs = mutableListOf<HistoryLog>()
+            var offset = 0L
+            val pageSize = 1000L
+
+            while (true) {
+                val chunk = SupabaseConfig.client.from("monitoring_inout")
+                    .select(columns = HISTORY_COLUMNS) {
+                        order("created_at", order = Order.DESCENDING)
+                        filter {
+                            gte("created_at", startUtcStr)
+                            lt("created_at", endUtcStr)
+                        }
+                        range(offset, offset + pageSize - 1)
+                    }
+                    .decodeList<HistoryLog>()
+
+                allLogs.addAll(chunk)
+                if (chunk.size < pageSize) break
+                offset += pageSize
+            }
+            allLogs
+        } catch (e: Exception) {
+            Log.e(TAG, "fetchLogsByDateRange error: ${e.message}")
             emptyList()
         }
     }

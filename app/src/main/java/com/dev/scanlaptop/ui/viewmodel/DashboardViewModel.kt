@@ -71,7 +71,7 @@ class DashboardViewModel : ViewModel() {
     // ─── Filter & Pagination ──────────────────────────────────
     var currentStatusFilter: String = "ALL"
         private set
-    var currentTimeFilter: String = "ALL"
+    var currentTimeFilter: String = "TODAY"
         private set
     private var currentPage: Int = 0
 
@@ -196,6 +196,40 @@ class DashboardViewModel : ViewModel() {
                 _analyticsData.value = data
             } catch (e: Exception) {
                 // silent fail — analytics data tidak kritikal
+            } finally {
+                _isAnalyticsLoading.value = false
+            }
+        }
+    }
+
+    /** Ambil data dan buat PDF berdasarkan rentang tanggal. */
+    fun exportPdfByDateRange(context: android.content.Context, startDate: java.time.LocalDate, endDate: java.time.LocalDate) {
+        viewModelScope.launch {
+            _isAnalyticsLoading.value = true // Gunakan state loading analytics atau state lain jika diperlukan
+            try {
+                val data = repository.fetchLogsByDateRange(startDate, endDate)
+                if (data.isEmpty()) {
+                    android.widget.Toast.makeText(context, "Tidak ada data untuk rentang waktu ini", android.widget.Toast.LENGTH_SHORT).show()
+                } else {
+                    val startStr = startDate.format(java.time.format.DateTimeFormatter.ofPattern("dd MMM yyyy", java.util.Locale("id", "ID")))
+                    val endStr = endDate.format(java.time.format.DateTimeFormatter.ofPattern("dd MMM yyyy", java.util.Locale("id", "ID")))
+                    val rentang = if (startStr == endStr) startStr else "$startStr - $endStr"
+                    val dateTitle = if (startStr == endStr) startStr else "${startStr}_$endStr"
+                    
+                    val uri = com.dev.scanlaptop.utils.PdfGenerator.generateReport(context, data, rentang, dateTitle)
+                    
+                    if (uri != null) {
+                        val shareIntent = android.content.Intent(android.content.Intent.ACTION_VIEW).apply {
+                            setDataAndType(uri, "application/pdf")
+                            flags = android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION or android.content.Intent.FLAG_ACTIVITY_NEW_TASK
+                        }
+                        context.startActivity(android.content.Intent.createChooser(shareIntent, "Buka Laporan PDF"))
+                    } else {
+                        android.widget.Toast.makeText(context, "Gagal membuat PDF", android.widget.Toast.LENGTH_SHORT).show()
+                    }
+                }
+            } catch (e: Exception) {
+                android.widget.Toast.makeText(context, "Gagal export PDF: ${e.message}", android.widget.Toast.LENGTH_SHORT).show()
             } finally {
                 _isAnalyticsLoading.value = false
             }

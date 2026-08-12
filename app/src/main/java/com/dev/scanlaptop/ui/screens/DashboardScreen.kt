@@ -169,8 +169,8 @@ fun DashboardScreen(
     var searchQuery by remember { mutableStateOf("") }
     var isSearchActive by remember { mutableStateOf(false) }
     var statusFilter by remember { mutableStateOf("ALL") }
-    var timeFilter by remember { mutableStateOf("ALL") }
-    var miniChartPeriod by remember { mutableIntStateOf(0) } // 0 means ALL
+    var timeFilter by remember { mutableStateOf("TODAY") }
+    var miniChartPeriod by remember { mutableIntStateOf(1) } // 1 means TODAY
 
     // Two-way binding for timeFilter and miniChartPeriod
     LaunchedEffect(timeFilter) {
@@ -513,7 +513,10 @@ fun DashboardScreen(
                     isRefreshing = isRefreshing,
                     isAnalyticsLoading = isAnalyticsLoading,
                     onRefresh = { dashboardViewModel.refresh() },
-                    onChartDaysChange = { days -> dashboardViewModel.loadAnalyticsData(days) }
+                    onChartDaysChange = { days -> dashboardViewModel.loadAnalyticsData(days) },
+                    onExportPdf = { startDate, endDate -> 
+                        dashboardViewModel.exportPdfByDateRange(context, startDate, endDate)
+                    }
                 )
             }
         }
@@ -605,33 +608,7 @@ fun HistoryContent(
     // Mini Chart Slider Period Filter (1 Hari, 7 Hari, 1 Bulan, Semua Waktu)
     // miniChartPeriod is now passed from parent to sync with timeFilter
     
-    val filteredMiniStats = remember(analyticsData, miniChartPeriod, stats) {
-        if (analyticsData.isNotEmpty()) {
-            val nowZdt = java.time.ZonedDateTime.now(java.time.ZoneId.of("Asia/Jakarta"))
-            val thresholdDate = when (miniChartPeriod) {
-                1 -> nowZdt.toLocalDate()
-                7 -> nowZdt.toLocalDate().minusDays(6)
-                30 -> nowZdt.toLocalDate().minusDays(29)
-                else -> null
-            }
-            val filteredLogs = if (thresholdDate == null) {
-                analyticsData
-            } else {
-                analyticsData.filter { log ->
-                    try {
-                        val logDate = log.created_at.substring(0, 10)
-                        val ld = java.time.LocalDate.parse(logDate)
-                        !ld.isBefore(thresholdDate)
-                    } catch (e: Exception) { true }
-                }
-            }
-            val inCnt = filteredLogs.count { it.status_io == "IN" }
-            val outCnt = filteredLogs.count { it.status_io == "OUT" }
-            com.dev.scanlaptop.data.model.StatsResult(total = filteredLogs.size, inCount = inCnt, outCount = outCnt)
-        } else {
-            stats
-        }
-    }
+    // filteredMiniStats removed to use accurate remote stats directly
 
     Column(modifier = Modifier.fillMaxSize()) {
         Box(
@@ -675,7 +652,7 @@ fun HistoryContent(
                         text = when {
                             isAnalyticsLoading -> "Menghitung..."
                             searchQuery.isNotEmpty() -> "${dataToShow.size} Hasil Pencarian"
-                            else -> "${filteredMiniStats.total} Aktivitas"
+                            else -> "${stats.total} Aktivitas"
                         },
                         color = Color.White,
                         fontWeight = FontWeight.Black,
@@ -690,13 +667,13 @@ fun HistoryContent(
                     Row {
                         com.dev.scanlaptop.ui.components.StatusChipMini(
                             label = "MASUK",
-                            count = if (isAnalyticsLoading) 0 else filteredMiniStats.inCount,
+                            count = if (isAnalyticsLoading) 0 else stats.inCount,
                             color = Color(0xFF00C853)
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         com.dev.scanlaptop.ui.components.StatusChipMini(
                             label = "KELUAR",
-                            count = if (isAnalyticsLoading) 0 else filteredMiniStats.outCount,
+                            count = if (isAnalyticsLoading) 0 else stats.outCount,
                             color = Color(0xFFEF4444)
                         )
                     }
@@ -709,6 +686,7 @@ fun HistoryContent(
                     modifier = Modifier.fillMaxWidth(),
                     selectedPeriod = miniChartPeriod,
                     isLoading = isAnalyticsLoading,
+                    totalRemoteCount = stats.total,
                     onPeriodSelect = { onMiniPeriodChange(it) }
                 )
             }

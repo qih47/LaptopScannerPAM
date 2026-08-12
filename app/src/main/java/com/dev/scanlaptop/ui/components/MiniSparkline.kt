@@ -34,6 +34,7 @@ fun MiniSparkline(
     modifier: Modifier = Modifier,
     selectedPeriod: Int = 7,
     isLoading: Boolean = false,
+    totalRemoteCount: Int = 0,
     onPeriodSelect: (Int) -> Unit = {}
 ) {
     val periods = remember { listOf(1, 7, 30, 0) }
@@ -43,11 +44,19 @@ fun MiniSparkline(
     }
     val pagerState = rememberPagerState(initialPage = initialPage, pageCount = { periods.size })
 
-    // Saat pengguna menggeser chart card ke kiri/kanan, sesuaikan filter periode
-    LaunchedEffect(pagerState.currentPage) {
-        val newPeriod = periods[pagerState.currentPage]
+    // Saat pengguna menggeser chart card ke kiri/kanan, sesuaikan filter periode (hanya saat scroll berhenti)
+    LaunchedEffect(pagerState.settledPage) {
+        val newPeriod = periods[pagerState.settledPage]
         if (newPeriod != selectedPeriod) {
             onPeriodSelect(newPeriod)
+        }
+    }
+
+    // Sinkronisasi animasi gulir saat selectedPeriod diubah dari luar (misal: filter atas)
+    LaunchedEffect(selectedPeriod) {
+        val targetPage = periods.indexOf(selectedPeriod)
+        if (targetPage >= 0 && pagerState.currentPage != targetPage) {
+            pagerState.animateScrollToPage(targetPage)
         }
     }
 
@@ -78,7 +87,7 @@ fun MiniSparkline(
                     1 -> 0
                     7 -> 6
                     30 -> 29
-                    else -> 365
+                    else -> 36500
                 }
                 historyList.forEach { log ->
                     try {
@@ -96,7 +105,7 @@ fun MiniSparkline(
                 counts.toList()
             }
             val maxCount = (sparklineCounts.maxOrNull() ?: 1).coerceAtLeast(1)
-            val totalCount = sparklineCounts.sum()
+            val totalCount = if (totalRemoteCount > 0) totalRemoteCount else sparklineCounts.sum()
 
             Surface(
                 color = Color(0xFFE3F2FD),

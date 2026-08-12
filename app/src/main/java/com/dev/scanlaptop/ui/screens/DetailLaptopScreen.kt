@@ -260,16 +260,25 @@ fun DetailLaptopScreen(
                                 showConfirmDialog = true
                             },
                             modifier = Modifier.fillMaxWidth().height(60.dp),
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1A237E)),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (isExpired == true) Color(0xFF9E9E9E) else Color(0xFF1A237E),
+                                disabledContainerColor = Color(0xFFE0E0E0)
+                            ),
                             shape = RoundedCornerShape(14.dp),
-                            enabled = !isSaving
+                            enabled = !isSaving && isExpired != true
                         ) {
                             if (isSaving) {
                                 CircularProgressIndicator(color = Color.White, modifier = Modifier.size(24.dp))
                             } else {
-                                Icon(Icons.Default.QrCodeScanner, null, tint = Color.White)
-                                Spacer(Modifier.width(12.dp))
-                                Text("PROSES MASUK ATAU KELUAR", fontWeight = FontWeight.Black, fontSize = 16.sp, color = Color.White)
+                                if (isExpired == true) {
+                                    Icon(Icons.Default.Block, null, tint = Color.White)
+                                    Spacer(Modifier.width(12.dp))
+                                    Text("TIDAK BERLAKU", fontWeight = FontWeight.Black, fontSize = 16.sp, color = Color.White)
+                                } else {
+                                    Icon(Icons.Default.QrCodeScanner, null, tint = Color.White)
+                                    Spacer(Modifier.width(12.dp))
+                                    Text("PROSES MASUK ATAU KELUAR", fontWeight = FontWeight.Black, fontSize = 16.sp, color = Color.White)
+                                }
                             }
                         }
                     }
@@ -537,6 +546,34 @@ fun InfoSection(laptop: LaptopDetail?, logs: List<HistoryLog> = emptyList()) {
                 }
             }
 
+            val countdownDays = remember(laptop?.berlaku_sampai) {
+                try {
+                    laptop?.berlaku_sampai?.let { tgl ->
+                        val exp = LocalDate.parse(tgl, DateTimeFormatter.ofPattern("yyyy-MM-dd"))
+                        java.time.temporal.ChronoUnit.DAYS.between(LocalDate.now(), exp)
+                    }
+                } catch (e: Exception) { null }
+            }
+            if (countdownDays != null) {
+                Spacer(modifier = Modifier.height(12.dp))
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = if (countdownDays < 0) Color(0xFFFFEBEE) else Color(0xFFE8F5E9),
+                    border = BorderStroke(1.dp, if (countdownDays < 0) Color(0xFFE53935) else Color(0xFF4CAF50)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    val text = if (countdownDays < 0) "Masa berlaku telah habis ${-countdownDays} hari yang lalu" else "Masa berlaku tersisa $countdownDays Hari lagi"
+                    Text(
+                        text = text,
+                        modifier = Modifier.padding(12.dp),
+                        color = if (countdownDays < 0) Color(0xFFC62828) else Color(0xFF2E7D32),
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 12.sp,
+                        textAlign = TextAlign.Center
+                    )
+                }
+            }
+
             HorizontalDivider(modifier = Modifier.padding(vertical = 15.dp), color = Color.Black.copy(alpha = 0.1f))
 
             Text("DATA PEMILIK & IDENTITAS", fontSize = 13.sp, fontWeight = FontWeight.Black, color = Color(0xFF1A237E), letterSpacing = 1.5.sp)
@@ -603,7 +640,15 @@ fun LaptopHeaderSection(laptop: LaptopDetail?, isExpired: Boolean, onBack: () ->
             }
             Spacer(modifier = Modifier.height(16.dp))
             Text(laptop?.nama_pengguna?.uppercase() ?: "-", color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Black, textAlign = TextAlign.Center)
-            Text("TOTAL PERANGKAT: ${laptop?.daftar_perangkat?.size ?: 0}", color = Color.White.copy(0.9f), fontSize = 14.sp, fontWeight = FontWeight.Bold)
+            val berlakuSampaiStr = remember(laptop?.berlaku_sampai) {
+                try {
+                    laptop?.berlaku_sampai?.let { tgl ->
+                        val ld = LocalDate.parse(tgl, DateTimeFormatter.ofPattern("yyyy-MM-dd"))
+                        ld.format(DateTimeFormatter.ofPattern("dd MMMM yyyy", Locale("id", "ID"))).uppercase()
+                    } ?: "-"
+                } catch (e: Exception) { "-" }
+            }
+            Text(berlakuSampaiStr, color = Color.White.copy(0.9f), fontSize = 14.sp, fontWeight = FontWeight.Bold)
             Spacer(modifier = Modifier.height(16.dp))
             Row(horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
                 Surface(color = badgeColor, shape = RoundedCornerShape(8.dp)) {
