@@ -49,6 +49,7 @@ fun DetailLaptopScreen(
     onLogClick: (HistoryLog) -> Unit,
     onSuccess: () -> Unit,
     onScanAgain: () -> Unit = onSuccess,
+    onHistoryLaptopClick: (String) -> Unit = {},
     viewModel: DetailLaptopViewModel = viewModel()
 ) {
     val context = LocalContext.current
@@ -60,9 +61,11 @@ fun DetailLaptopScreen(
     val isSaving by viewModel.isSaving.collectAsState()
     val saveResult by viewModel.saveResult.collectAsState()
     val errorMessage by viewModel.errorMessage.collectAsState()
+    val qrHistory by viewModel.qrHistory.collectAsState()
 
     // ─── State lokal (UI only) ─────────────────────────────────
     var showConfirmDialog by remember { mutableStateOf(false) }
+    var showQrHistoryDialog by remember { mutableStateOf(false) }
     var feedbackData by remember { mutableStateOf<Pair<String, String>?>(null) }
     var keteranganUser by remember { mutableStateOf("") }
     val selectedDevices = remember { mutableStateListOf<String>() }
@@ -244,6 +247,61 @@ fun DetailLaptopScreen(
         }
     }
 
+    if (showQrHistoryDialog) {
+        ModalBottomSheet(
+            onDismissRequest = { showQrHistoryDialog = false },
+            containerColor = Color.White
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(24.dp)
+                    .padding(bottom = 24.dp)
+            ) {
+                Text("Riwayat Penggunaan QR", fontWeight = FontWeight.Black, color = Color(0xFF1A237E), fontSize = 18.sp)
+                Spacer(Modifier.height(16.dp))
+                Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                    qrHistory.forEach { hist ->
+                        Card(
+                            onClick = {
+                                showQrHistoryDialog = false
+                                hist.uuid?.let { onHistoryLaptopClick(it) }
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 6.dp),
+                            colors = CardDefaults.cardColors(containerColor = Color(0xFFF5F5F5)),
+                            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                        ) {
+                            Column(modifier = Modifier.padding(16.dp)) {
+                                Text(hist.nama_pengguna?.uppercase() ?: "-", fontWeight = FontWeight.Bold, color = Color.Black, fontSize = 14.sp)
+                                Text(hist.instansi_divisi?.uppercase() ?: "-", fontSize = 12.sp, color = Color.DarkGray)
+                                Spacer(Modifier.height(8.dp))
+                                Text("Berlaku s/d: ${hist.berlaku_sampai ?: "-"}", fontSize = 12.sp, color = Color.Black, fontWeight = FontWeight.SemiBold)
+                                
+                                if (!hist.daftar_perangkat.isNullOrEmpty()) {
+                                    HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp), color = Color.Black.copy(alpha = 0.1f))
+                                    Text("Perangkat:", fontSize = 11.sp, color = Color.DarkGray, fontWeight = FontWeight.Bold)
+                                    Spacer(Modifier.height(4.dp))
+                                    hist.daftar_perangkat.forEach { perangkat ->
+                                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(bottom = 2.dp)) {
+                                            Icon(Icons.Default.Devices, contentDescription = null, modifier = Modifier.size(12.dp), tint = Color.Gray)
+                                            Spacer(Modifier.width(4.dp))
+                                            Text(
+                                                "${perangkat.merk?.uppercase()} ${perangkat.tipe?.uppercase()} - S/N: ${perangkat.no_seri?.uppercase()}",
+                                                fontSize = 11.sp, color = Color.Black
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     // ─── Scaffold utama ────────────────────────────────────────
     Scaffold(
         bottomBar = {
@@ -302,6 +360,32 @@ fun DetailLaptopScreen(
                 else -> {
                     Column(modifier = Modifier.fillMaxSize().verticalScroll(scrollState).background(Color(0xFFF0F2F5))) {
                         LaptopHeaderSection(laptop, isExpired == true, onBack)
+
+                        if (qrHistory.isNotEmpty()) {
+                            Surface(
+                                color = Color(0xFFFFF3E0),
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 16.dp, vertical = 8.dp)
+                                    .clickable { showQrHistoryDialog = true }
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(12.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(Icons.Default.Warning, contentDescription = null, tint = Color(0xFFE65100), modifier = Modifier.size(24.dp))
+                                    Spacer(Modifier.width(12.dp))
+                                    Text(
+                                        "QR Code ini punya ${qrHistory.size} riwayat pemakai sebelumnya. Klik untuk melihat detail.",
+                                        fontSize = 12.sp, color = Color(0xFFE65100), fontWeight = FontWeight.Bold,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    Icon(Icons.Default.ChevronRight, contentDescription = null, tint = Color(0xFFE65100))
+                                }
+                            }
+                        }
+
                         Column(modifier = Modifier.padding(16.dp)) {
                             InfoSection(laptop, logs)
                             Spacer(modifier = Modifier.height(24.dp))
@@ -562,7 +646,11 @@ fun InfoSection(laptop: LaptopDetail?, logs: List<HistoryLog> = emptyList()) {
                     border = BorderStroke(1.dp, if (countdownDays < 0) Color(0xFFE53935) else Color(0xFF4CAF50)),
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    val text = if (countdownDays < 0) "Masa berlaku telah habis ${-countdownDays} hari yang lalu" else "Masa berlaku tersisa $countdownDays Hari lagi"
+                    val text = when {
+                        countdownDays < 0 -> "Masa berlaku telah habis ${-countdownDays} hari yang lalu"
+                        countdownDays == 0L -> "Berlaku sampai hari ini"
+                        else -> "Masa berlaku tersisa $countdownDays Hari lagi"
+                    }
                     Text(
                         text = text,
                         modifier = Modifier.padding(12.dp),

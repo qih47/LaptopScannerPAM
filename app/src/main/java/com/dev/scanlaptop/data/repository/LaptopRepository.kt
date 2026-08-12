@@ -18,11 +18,26 @@ class LaptopRepository {
      * @throws Exception jika laptop tidak ditemukan atau error koneksi.
      */
     suspend fun getLaptopByQr(codeQr: String): LaptopDetail {
-        return SupabaseConfig.client.from("registrasi_laptop")
-            .select(columns = Columns.raw("*, daftar_perangkat(*)")) {
+        val response = SupabaseConfig.client.from("registrasi_laptop")
+            .select(columns = io.github.jan.supabase.postgrest.query.Columns.raw("*, daftar_perangkat(*)")) {
                 filter { eq("code_qr", codeQr) }
+                order("berlaku_sampai", order = io.github.jan.supabase.postgrest.query.Order.DESCENDING)
+                limit(1)
             }
-            .decodeSingle<LaptopDetail>()
+            .decodeList<LaptopDetail>()
+        return response.firstOrNull() ?: throw Exception("QR Code tidak ditemukan atau tidak valid")
+    }
+
+    /**
+     * Ambil semua riwayat registrasi berdasarkan QR code, diurutkan dari yang terbaru.
+     */
+    suspend fun getAllLaptopsByQr(codeQr: String): List<LaptopDetail> {
+        return SupabaseConfig.client.from("registrasi_laptop")
+            .select(columns = io.github.jan.supabase.postgrest.query.Columns.raw("*, daftar_perangkat(*)")) {
+                filter { eq("code_qr", codeQr) }
+                order("berlaku_sampai", order = io.github.jan.supabase.postgrest.query.Order.DESCENDING)
+            }
+            .decodeList<LaptopDetail>()
     }
 
     /**
@@ -44,7 +59,11 @@ class LaptopRepository {
     suspend fun validateQr(codeQr: String): Boolean {
         return try {
             val response = SupabaseConfig.client.from("registrasi_laptop")
-                .select { filter { eq("code_qr", codeQr) } }
+                .select { 
+                    filter { eq("code_qr", codeQr) }
+                    order("berlaku_sampai", order = io.github.jan.supabase.postgrest.query.Order.DESCENDING)
+                    limit(1)
+                }
             response.data != "[]"
         } catch (e: Exception) {
             Log.e("LaptopRepository", "QR validation error: ${e.message}")

@@ -206,6 +206,9 @@ fun AppNavigation() {
                                 "open_scanner", true
                             )
                             navController.popBackStack()
+                        },
+                        onHistoryLaptopClick = { historyUuid ->
+                            navController.navigate("detail_laptop/$historyUuid?fromHistory=true")
                         }
                     )
                 }

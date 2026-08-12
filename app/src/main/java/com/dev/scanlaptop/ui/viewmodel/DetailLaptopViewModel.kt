@@ -38,6 +38,9 @@ class DetailLaptopViewModel(application: Application) : AndroidViewModel(applica
     private val _logs = MutableStateFlow<List<HistoryLog>>(emptyList())
     val logs: StateFlow<List<HistoryLog>> = _logs.asStateFlow()
 
+    private val _qrHistory = MutableStateFlow<List<LaptopDetail>>(emptyList())
+    val qrHistory: StateFlow<List<LaptopDetail>> = _qrHistory.asStateFlow()
+
     private val _isLoading = MutableStateFlow(true)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
@@ -68,12 +71,15 @@ class DetailLaptopViewModel(application: Application) : AndroidViewModel(applica
             _isLoading.value = true
             _errorMessage.value = null
             try {
-                // Deteksi: UUID punya '-' dan panjang > 20, QR code tidak
                 val isUuid = laptopUuid.contains("-") && laptopUuid.length > 20
                 val laptopResult = if (isUuid) {
+                    _qrHistory.value = emptyList()
                     laptopRepository.getLaptopByUuid(laptopUuid)
                 } else {
-                    laptopRepository.getLaptopByQr(laptopUuid)
+                    val allLaptops = laptopRepository.getAllLaptopsByQr(laptopUuid)
+                    if (allLaptops.isEmpty()) throw Exception("QR Code tidak ditemukan")
+                    _qrHistory.value = allLaptops.drop(1)
+                    allLaptops.first()
                 }
                 _laptop.value = laptopResult
 
