@@ -52,14 +52,18 @@ fun FilterBottomSheet(
                 color = Color(0xFF1E293B)
             )
             Row(modifier = Modifier.horizontalScroll(rememberScrollState())) {
-                listOf("ALL", "IN", "OUT").forEach { status ->
+                listOf(
+                    "ALL" to "Semua Status",
+                    "IN" to "Masuk",
+                    "OUT" to "Keluar"
+                ).forEach { (code, labelText) ->
                     FilterChip(
-                        selected = statusFilter == status,
-                        onClick = { onStatusChange(status) },
+                        selected = statusFilter == code,
+                        onClick = { onStatusChange(code) },
                         label = {
                             Text(
-                                status,
-                                color = if (statusFilter == status) Color.White else Color(0xFF1E293B)
+                                labelText,
+                                color = if (statusFilter == code) Color.White else Color(0xFF1E293B)
                             )
                         },
                         modifier = Modifier.padding(end = 8.dp),
@@ -83,17 +87,17 @@ fun FilterBottomSheet(
             )
             Row(modifier = Modifier.horizontalScroll(rememberScrollState())) {
                 listOf(
-                    "ALL" to "Semua",
+                    "ALL" to "Semua Waktu",
                     "TODAY" to "Hari Ini",
-                    "WEEK" to "Minggu Ini",
-                    "MONTH" to "Bulan Ini"
-                ).forEach { (code, label) ->
+                    "WEEK" to "7 Hari",
+                    "MONTH" to "1 Bulan"
+                ).forEach { (code, labelText) ->
                     FilterChip(
                         selected = timeFilter == code,
                         onClick = { onTimeChange(code) },
                         label = {
                             Text(
-                                label,
+                                labelText,
                                 color = if (timeFilter == code) Color.White else Color(0xFF1E293B)
                             )
                         },

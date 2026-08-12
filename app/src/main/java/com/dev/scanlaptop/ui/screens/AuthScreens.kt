@@ -266,7 +266,14 @@ fun LoginScreen(
                     }
                 }
             }
-            Spacer(modifier = Modifier.height(20.dp)) // Padding bawah sedikit
+            Spacer(modifier = Modifier.height(16.dp))
+            Text(
+                text = "v${com.dev.scanlaptop.BuildConfig.VERSION_NAME}",
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Bold,
+                color = darkText.copy(alpha = 0.5f)
+            )
+            Spacer(modifier = Modifier.height(24.dp))
         }
     }
 }

@@ -93,7 +93,7 @@ class RealtimeNotificationService : Service() {
                 }
             }
         }
-        return START_STICKY // restart jika di-kill sistem
+        return START_NOT_STICKY // Tidak me-restart service jika di-kill sistem untuk menghindari crash di Android 12+
     }
 
     override fun onDestroy() {

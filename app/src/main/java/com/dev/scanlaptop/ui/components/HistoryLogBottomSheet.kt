@@ -26,7 +26,7 @@ import androidx.compose.material3.ButtonDefaults
 fun HistoryLogBottomSheetContent(log: HistoryLog, onDetailClick: () -> Unit = {}) {
     val statusColor = when (log.status_io) {
         "IN" -> Color(0xFF1B5E20) // Hijau
-        "OUT" -> Color(0xFF0D47A1) // Biru
+        "OUT" -> Color(0xFFB71C1C) // Merah
         else -> Color(0xFFB71C1C) // Merah (Ditolak/dll)
     }
     val statusLabel = when (log.status_io) {

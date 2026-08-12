@@ -37,4 +37,18 @@ class AppUpdateRepository(private val supabaseClient: SupabaseClient) {
             }
         }
     }
+
+    suspend fun getAppVersionByCode(versionCode: Int): AppVersion? {
+        return withContext(Dispatchers.IO) {
+            try {
+                val response = supabaseClient.postgrest["app_versions"]
+                    .select { filter { eq("version_code", versionCode) } }
+                    .decodeList<AppVersion>()
+                response.firstOrNull() ?: getLatestAppVersion()
+            } catch (e: Exception) {
+                e.printStackTrace()
+                null
+            }
+        }
+    }
 }

@@ -38,18 +38,9 @@ class OverdueWorker(
             // "OUT" = belum kembali (aset perusahaan)
             val overdueIn = overdueItems.filter { it.type == "IN" }
             val overdueOut = overdueItems.filter { it.type == "OUT" }
-            
-            val total = overdueItems.size
-            
-            if (total == 1) {
-                // Notifikasi tunggal yang spesifik
-                val item = overdueItems.first()
-                val statusText = if (item.type == "IN") "belum keluar" else "belum kembali"
-                val locationText = if (item.type == "IN") "di dalam area" else "di luar area"
-                val merk = item.perangkatList.firstOrNull() ?: "Laptop"
-                
-                // Format waktu
-                val timeStr = item.lastInTime?.let {
+
+            fun formatTime(timeStrRaw: String?): String {
+                return timeStrRaw?.let {
                     try {
                         val zdt = ZonedDateTime.parse(it)
                         val formatter = DateTimeFormatter.ofPattern("dd MMM yyyy, HH:mm", Locale("id", "ID"))
@@ -58,22 +49,34 @@ class OverdueWorker(
                         it.take(16).replace("T", " ")
                     }
                 } ?: "waktu tidak diketahui"
-                
-                val title = "Peringatan Mengendap"
+            }
+
+            val total = overdueItems.size
+
+            if (total == 1) {
+                // 1. Notifikasi tunggal jika hanya 1 perangkat yang mengendap
+                val item = overdueItems.first()
+                val statusText = if (item.type == "IN") "belum keluar" else "belum kembali"
+                val locationText = if (item.type == "IN") "di dalam area" else "di luar area"
+                val merk = item.perangkatList.firstOrNull() ?: "Laptop"
+                val timeStr = formatTime(item.lastInTime)
+
+                val title = "⚠️ Peringatan Mengendap"
                 val message = "$merk milik ${item.namaUser} $statusText."
                 val bigText = "Perangkat $merk milik ${item.namaUser} terpantau mengendap $locationText sejak $timeStr. Harap lakukan pengecekan."
-                
+
                 NotificationHelper.showOverdueNotification(
                     context = appContext,
                     title = title,
                     message = message,
-                    bigText = bigText
+                    bigText = bigText,
+                    notifId = NotificationHelper.OVERDUE_NOTIFICATION_ID
                 )
             } else {
-                // Notifikasi kolektif (lebih dari 1 perangkat)
-                val title = "Peringatan Mengendap"
+                // 2. Notifikasi kolektif (1 notif merangkum baik IN maupun OUT)
+                val title = "⚠️ Peringatan Mengendap"
                 val message = "Terdapat $total perangkat mengendap."
-                
+
                 val sb = StringBuilder()
                 sb.append("Terdapat $total perangkat yang terdeteksi mengendap melebihi batas waktu operasional, dengan rincian:\n")
                 if (overdueIn.isNotEmpty()) {
@@ -83,15 +86,16 @@ class OverdueWorker(
                     sb.append("• ${overdueOut.size} perangkat di luar area (belum kembali)\n")
                 }
                 sb.append("\nMohon segera lakukan pengecekan lebih lanjut melalui menu Mengendap.")
-                
+
                 NotificationHelper.showOverdueNotification(
                     context = appContext,
                     title = title,
                     message = message,
-                    bigText = sb.toString()
+                    bigText = sb.toString(),
+                    notifId = NotificationHelper.OVERDUE_NOTIFICATION_ID
                 )
             }
-            
+
             return Result.success()
         } catch (e: Exception) {
             Log.e(TAG, "Gagal mengecek overdue: ${e.message}")

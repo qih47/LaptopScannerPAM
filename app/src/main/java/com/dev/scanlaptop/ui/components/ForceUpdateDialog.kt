@@ -34,12 +34,22 @@ fun ForceUpdateDialog(
             usePlatformDefaultWidth = false
         )
     ) {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(Color.Black.copy(alpha = 0.6f)),
-            contentAlignment = Alignment.Center
-        ) {
+        val configuration = androidx.compose.ui.platform.LocalConfiguration.current
+        val screenWidthDp = configuration.screenWidthDp
+        val scaleFactor = (screenWidthDp / 412f).coerceIn(0.75f, 1f)
+        val currentDensity = androidx.compose.ui.platform.LocalDensity.current
+        val adaptiveDensity = androidx.compose.ui.unit.Density(
+            density = currentDensity.density * scaleFactor,
+            fontScale = currentDensity.fontScale * scaleFactor
+        )
+
+        androidx.compose.runtime.CompositionLocalProvider(androidx.compose.ui.platform.LocalDensity provides adaptiveDensity) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.6f)),
+                contentAlignment = Alignment.Center
+            ) {
             Card(
                 modifier = Modifier
                     .fillMaxWidth(0.85f)
@@ -50,6 +60,7 @@ fun ForceUpdateDialog(
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
+                        .verticalScroll(androidx.compose.foundation.rememberScrollState())
                         .padding(24.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {

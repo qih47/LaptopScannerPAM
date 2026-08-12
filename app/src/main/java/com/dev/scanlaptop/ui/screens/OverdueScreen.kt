@@ -18,6 +18,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import android.content.Intent
 import android.net.Uri
@@ -64,6 +65,7 @@ fun OverdueScreen(
         Box(
             modifier = Modifier
                 .fillMaxWidth()
+                .clip(RoundedCornerShape(bottomStart = 16.dp, bottomEnd = 16.dp))
                 .background(navyGradient)
                 .statusBarsPadding()
                 .padding(horizontal = 20.dp, vertical = 16.dp)
@@ -446,7 +448,7 @@ fun OverdueCard(item: OverdueItem, onClick: () -> Unit = {}) {
                         Spacer(modifier = Modifier.width(8.dp))
                         Column {
                             Text(
-                                "S/N: ${sn.uppercase()}",
+                                sn.uppercase(),
                                 fontSize = 11.sp,
                                 color = Color(0xFF1E293B),
                                 fontWeight = FontWeight.Bold

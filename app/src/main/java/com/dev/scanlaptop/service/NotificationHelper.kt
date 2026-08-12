@@ -23,6 +23,8 @@ object NotificationHelper {
     
     const val TRANSACTION_NOTIFICATION_BASE_ID = 2000
     const val OVERDUE_NOTIFICATION_ID = 3000
+    const val OVERDUE_IN_NOTIFICATION_ID = 3001
+    const val OVERDUE_OUT_NOTIFICATION_ID = 3002
 
     /**
      * Daftarkan NotificationChannel. Harus dipanggil saat app mulai atau service dibuat.
@@ -129,6 +131,7 @@ object NotificationHelper {
             )
             .setContentIntent(pendingIntent)
             .setAutoCancel(true)
+            .setGroup("GROUP_TRANSACTIONS")
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setDefaults(NotificationCompat.DEFAULT_ALL)
             .build()
@@ -143,7 +146,8 @@ object NotificationHelper {
         context: Context,
         title: String,
         message: String,
-        bigText: String
+        bigText: String,
+        notifId: Int = OVERDUE_NOTIFICATION_ID
     ) {
         val manager = context.getSystemService(NotificationManager::class.java)
 
@@ -152,7 +156,7 @@ object NotificationHelper {
             putExtra("open_tab", "overdue") // Arahkan ke tab overdue jika memungkinkan
         }
         val pendingIntent = PendingIntent.getActivity(
-            context, OVERDUE_NOTIFICATION_ID, intent,
+            context, notifId, intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
@@ -167,10 +171,11 @@ object NotificationHelper {
             )
             .setContentIntent(pendingIntent)
             .setAutoCancel(true)
+            .setGroup("GROUP_OVERDUE")
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setDefaults(NotificationCompat.DEFAULT_ALL)
             .build()
 
-        manager.notify(OVERDUE_NOTIFICATION_ID, notification)
+        manager.notify(notifId, notification)
     }
 }

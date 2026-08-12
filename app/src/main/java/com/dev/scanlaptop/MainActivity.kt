@@ -15,6 +15,7 @@ import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.navArgument
 import com.dev.scanlaptop.data.SessionManager
 import com.dev.scanlaptop.data.HistoryLog
@@ -212,8 +213,9 @@ fun AppNavigation() {
 
             // 4. Log Detail
             composable("log_detail") {
-                val log = navController.previousBackStackEntry
-                    ?.savedStateHandle?.get<HistoryLog>("selected_log")
+                val log = remember {
+                    navController.previousBackStackEntry?.savedStateHandle?.get<HistoryLog>("selected_log")
+                }
 
                 if (log != null) {
                     LogDetailScreen(log = log, onBack = { navController.popBackStack() })
@@ -227,6 +229,24 @@ fun AppNavigation() {
                         }
                     }
                 }
+            }
+
+            // 5. Officer History
+            composable(
+                route = "officer_history/{npp}",
+                arguments = listOf(navArgument("npp") { type = NavType.StringType })
+            ) { backStackEntry ->
+                val npp = backStackEntry.arguments?.getString("npp") ?: ""
+                val officerViewModel: com.dev.scanlaptop.ui.viewmodel.OfficerHistoryViewModel = viewModel()
+                com.dev.scanlaptop.ui.screens.OfficerHistoryScreen(
+                    viewModel = officerViewModel,
+                    npp = npp,
+                    onBack = { navController.popBackStack() },
+                    onItemClick = { log ->
+                        navController.currentBackStackEntry?.savedStateHandle?.set("selected_log", log)
+                        navController.navigate("log_detail")
+                    }
+                )
             }
         }
     }

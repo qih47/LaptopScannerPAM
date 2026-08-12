@@ -33,6 +33,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.draw.clip
 import com.dev.scanlaptop.ui.components.HistoryLogBottomSheetContent
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
@@ -74,6 +75,8 @@ fun DashboardScreen(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val sessionManager = remember { com.dev.scanlaptop.data.SessionManager(context) }
+    val pushNotifEnabled by sessionManager.pushNotifEnabledFlow.collectAsState(initial = false)
     val sharedPrefs = remember { context.getSharedPreferences("monitoring_prefs", Context.MODE_PRIVATE) }
 
     // ─── Observe state dari ViewModel ─────────────────────────
@@ -89,6 +92,7 @@ fun DashboardScreen(
     val isRealtimeConnected by dashboardViewModel.isRealtimeConnected.collectAsState()
     val overdueCount by overdueViewModel.overdueCount.collectAsState()
     val analyticsData by dashboardViewModel.analyticsData.collectAsState()
+    val isAnalyticsLoading by dashboardViewModel.isAnalyticsLoading.collectAsState()
     val newTransactionEvent by dashboardViewModel.newTransactionEvent.collectAsState()
     val newTransactionCount by dashboardViewModel.newTransactionCount.collectAsState()
 
@@ -118,10 +122,81 @@ fun DashboardScreen(
             navController.currentBackStackEntry?.savedStateHandle?.remove<Boolean>("open_scanner")
         }
     }
+
+    // State & logic untuk "What's New / Update Hint Popup" pasca update
+    val lastSeenVersionCode by sessionManager.lastSeenVersionCodeFlow.collectAsState(initial = -1)
+    var showWhatsNewDialog by remember { mutableStateOf(false) }
+    var whatsNewNotes by remember { mutableStateOf("") }
+    var whatsNewVersionName by remember { mutableStateOf(com.dev.scanlaptop.BuildConfig.VERSION_NAME) }
+
+    LaunchedEffect(lastSeenVersionCode) {
+        // -1 = DataStore belum ready (initial value collectAsState), skip dulu
+        if (lastSeenVersionCode == -1) return@LaunchedEffect
+
+        // Tampilkan popup jika versi yang tersimpan lebih lama dari versi saat ini
+        if (lastSeenVersionCode < com.dev.scanlaptop.BuildConfig.VERSION_CODE) {
+            // Coba ambil release notes dari Supabase
+            val notes = try {
+                val appUpdateRepo = com.dev.scanlaptop.data.repository.AppUpdateRepository(com.dev.scanlaptop.data.SupabaseConfig.client)
+                val versionInfo = appUpdateRepo.getAppVersionByCode(com.dev.scanlaptop.BuildConfig.VERSION_CODE)
+                if (!versionInfo?.version_name.isNullOrBlank()) {
+                    whatsNewVersionName = versionInfo!!.version_name
+                }
+                versionInfo?.release_notes
+            } catch (_: Exception) { null }
+
+            // Jika Supabase tidak ada data → gunakan teks fallback, popup tetap tampil
+            whatsNewNotes = if (!notes.isNullOrBlank()) notes else
+                "Aplikasi telah diperbarui ke versi ${com.dev.scanlaptop.BuildConfig.VERSION_NAME} dengan peningkatan performa dan perbaikan bug."
+
+            showWhatsNewDialog = true
+        }
+    }
+
+    if (showWhatsNewDialog) {
+        com.dev.scanlaptop.ui.components.WhatsNewDialog(
+            versionName = whatsNewVersionName,
+            releaseNotes = whatsNewNotes,
+            onDismiss = {
+                showWhatsNewDialog = false
+                scope.launch {
+                    sessionManager.setLastSeenVersionCode(com.dev.scanlaptop.BuildConfig.VERSION_CODE)
+                }
+            }
+        )
+    }
+
     var searchQuery by remember { mutableStateOf("") }
     var isSearchActive by remember { mutableStateOf(false) }
     var statusFilter by remember { mutableStateOf("ALL") }
     var timeFilter by remember { mutableStateOf("ALL") }
+    var miniChartPeriod by remember { mutableIntStateOf(0) } // 0 means ALL
+
+    // Two-way binding for timeFilter and miniChartPeriod
+    LaunchedEffect(timeFilter) {
+        val newPeriod = when (timeFilter) {
+            "TODAY" -> 1
+            "WEEK" -> 7
+            "MONTH" -> 30
+            else -> 0
+        }
+        if (miniChartPeriod != newPeriod) {
+            miniChartPeriod = newPeriod
+        }
+    }
+
+    LaunchedEffect(miniChartPeriod) {
+        val newFilter = when (miniChartPeriod) {
+            1 -> "TODAY"
+            7 -> "WEEK"
+            30 -> "MONTH"
+            else -> "ALL"
+        }
+        if (timeFilter != newFilter) {
+            timeFilter = newFilter
+        }
+    }
+
     var showFilterSheet by remember { mutableStateOf(false) }
     val sheetState = rememberModalBottomSheetState()
 
@@ -134,19 +209,24 @@ fun DashboardScreen(
         }
     }
 
+    LaunchedEffect(pushNotifEnabled) {
+        if (pushNotifEnabled) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                notifPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+            } else {
+                startNotificationService(context, userData.npp)
+            }
+        } else {
+            context.stopService(Intent(context, com.dev.scanlaptop.service.RealtimeNotificationService::class.java))
+        }
+    }
+
     // ─── Init: load data, start realtime, start service ───────
     LaunchedEffect(Unit) {
         dashboardViewModel.loadHistory()
         dashboardViewModel.startRealtimeSubscription()
         overdueViewModel.loadOverdue()
         dashboardViewModel.loadAnalyticsData() // fetch 7 hari penuh untuk analytics
-
-        // Minta permission notif dan start service
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            notifPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-        } else {
-            startNotificationService(context, userData.npp)
-        }
     }
 
     // Refresh data saat pindah tab
@@ -407,20 +487,32 @@ fun DashboardScreen(
                         newTransactionEvent = newTransactionEvent,
                         newTransactionCount = newTransactionCount,
                         clearNewTransactionEvent = { dashboardViewModel.clearNewTransactionEvent() },
-                        fetchPairedTransaction = { uuid, status, date -> dashboardViewModel.getPairedTransaction(uuid, status, date) }
+                        fetchPairedTransaction = { uuid, status, date -> dashboardViewModel.getPairedTransaction(uuid, status, date) },
+                        isAnalyticsLoading = isAnalyticsLoading,
+                        miniChartPeriod = miniChartPeriod,
+                        onMiniPeriodChange = { period -> 
+                            miniChartPeriod = period
+                            dashboardViewModel.loadAnalyticsData(period) 
+                        }
                     )
                 }
                 1 -> CameraScannerScreen(onQrDetected = { code ->
                     navController.navigate("detail_laptop/$code")
                     selectedTab = 0
                 })
-                2 -> ProfileContent(userData, onLogout, navyColor = colorStart)
+                2 -> ProfileContent(
+                    userData = userData,
+                    onLogout = onLogout,
+                    onHistoryClick = { navController.navigate("officer_history/${userData.npp}") },
+                    navyColor = colorStart
+                )
                 3 -> OverdueScreen(navyGradient = pindadGradient, overdueViewModel = overdueViewModel, onItemClicked = { uuid, showProcess -> navController.navigate("detail_laptop/$uuid?fromHistory=${!showProcess}") })
                 4 -> AnalyticsScreen(
                     historyList = analyticsData,
                     navyGradient = pindadGradient,
                     isLoading = isLoading,
                     isRefreshing = isRefreshing,
+                    isAnalyticsLoading = isAnalyticsLoading,
                     onRefresh = { dashboardViewModel.refresh() },
                     onChartDaysChange = { days -> dashboardViewModel.loadAnalyticsData(days) }
                 )
@@ -485,33 +577,88 @@ fun HistoryContent(
     onRefresh: () -> Unit,
     onRetry: () -> Unit,
     clearNewTransactionEvent: () -> Unit,
-    fetchPairedTransaction: suspend (String, String, String) -> com.dev.scanlaptop.data.HistoryLog?
+    fetchPairedTransaction: suspend (String, String, String) -> com.dev.scanlaptop.data.HistoryLog?,
+    isAnalyticsLoading: Boolean = false,
+    miniChartPeriod: Int,
+    onMiniPeriodChange: (Int) -> Unit = {}
 ) {
     val navyColor = Color(0xFF0D47A1)
     val swipeRefreshState = com.google.accompanist.swiperefresh.rememberSwipeRefreshState(isRefreshing)
 
-    // trafficCount: hitung transaksi dalam 1 jam terakhir untuk label "Padat"
-    val nowMillis = System.currentTimeMillis()
+    // trafficCount: hitung transaksi dalam 15 menit terakhir untuk label "Padat" (auto-refresh tiap 1 menit)
+    var nowMillis by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            kotlinx.coroutines.delay(60_000)
+            nowMillis = System.currentTimeMillis()
+        }
+    }
     var trafficCount = 0
     dataToShow.forEach { log ->
         try {
             val logTime = java.time.ZonedDateTime.parse(log.created_at).toInstant().toEpochMilli()
-            if (nowMillis - logTime <= 3600000L) {
+            if (nowMillis - logTime <= 900_000L) { // 15 menit
                 trafficCount++
             }
         } catch (e: Exception) {}
+    }
+
+    // Mini Chart Slider Period Filter (1 Hari, 7 Hari, 1 Bulan, Semua Waktu)
+    // miniChartPeriod is now passed from parent to sync with timeFilter
+    
+    val filteredMiniStats = remember(analyticsData, miniChartPeriod, stats) {
+        if (analyticsData.isNotEmpty()) {
+            val nowZdt = java.time.ZonedDateTime.now(java.time.ZoneId.of("Asia/Jakarta"))
+            val thresholdDate = when (miniChartPeriod) {
+                1 -> nowZdt.toLocalDate()
+                7 -> nowZdt.toLocalDate().minusDays(6)
+                30 -> nowZdt.toLocalDate().minusDays(29)
+                else -> null
+            }
+            val filteredLogs = if (thresholdDate == null) {
+                analyticsData
+            } else {
+                analyticsData.filter { log ->
+                    try {
+                        val logDate = log.created_at.substring(0, 10)
+                        val ld = java.time.LocalDate.parse(logDate)
+                        !ld.isBefore(thresholdDate)
+                    } catch (e: Exception) { true }
+                }
+            }
+            val inCnt = filteredLogs.count { it.status_io == "IN" }
+            val outCnt = filteredLogs.count { it.status_io == "OUT" }
+            com.dev.scanlaptop.data.model.StatsResult(total = filteredLogs.size, inCount = inCnt, outCount = outCnt)
+        } else {
+            stats
+        }
     }
 
     Column(modifier = Modifier.fillMaxSize()) {
         Box(
             modifier = Modifier
                 .fillMaxWidth()
+                .clip(RoundedCornerShape(bottomStart = 16.dp, bottomEnd = 16.dp))
                 .background(navyGradient)
                 .padding(top = 16.dp, bottom = 24.dp)
         ) {
             Column(modifier = Modifier.padding(horizontal = 24.dp)) {
-                val statusText = if (statusFilter == "ALL") "Semua Status" else statusFilter.replaceFirstChar { it.uppercase() }
-                val timeText = if (timeFilter == "ALL") "Semua Waktu" else timeFilter.replaceFirstChar { it.uppercase() }
+                val statusText = when (statusFilter) {
+                    "IN" -> "Masuk"
+                    "OUT" -> "Keluar"
+                    else -> "Semua Status"
+                }
+                val timeText = when (timeFilter) {
+                    "TODAY" -> "Hari Ini"
+                    "WEEK" -> "7 Hari"
+                    "MONTH" -> "1 Bulan"
+                    else -> when (miniChartPeriod) {
+                        1 -> "Hari Ini"
+                        7 -> "7 Hari"
+                        30 -> "1 Bulan"
+                        else -> "Semua Waktu"
+                    }
+                }
                 Text(
                     text = "$statusText • $timeText",
                     color = Color.White.copy(alpha = 0.8f),
@@ -526,7 +673,11 @@ fun HistoryContent(
                 ) {
                     // Auto-shrink text biar tidak nabrak chip di kanan
                     androidx.compose.material3.Text(
-                        text = if (searchQuery.isNotEmpty()) "${dataToShow.size} Hasil Pencarian" else "${stats.total} Aktivitas",
+                        text = when {
+                            isAnalyticsLoading -> "Menghitung..."
+                            searchQuery.isNotEmpty() -> "${dataToShow.size} Hasil Pencarian"
+                            else -> "${filteredMiniStats.total} Aktivitas"
+                        },
                         color = Color.White,
                         fontWeight = FontWeight.Black,
                         maxLines = 1,
@@ -538,17 +689,28 @@ fun HistoryContent(
                         modifier = Modifier.weight(1f).padding(end = 8.dp)
                     )
                     Row {
-                        com.dev.scanlaptop.ui.components.StatusChipMini(label = "MASUK", count = stats.inCount, color = Color(0xFF00C853))
+                        com.dev.scanlaptop.ui.components.StatusChipMini(
+                            label = "MASUK",
+                            count = if (isAnalyticsLoading) 0 else filteredMiniStats.inCount,
+                            color = Color(0xFF00C853)
+                        )
                         Spacer(modifier = Modifier.width(8.dp))
-                        com.dev.scanlaptop.ui.components.StatusChipMini(label = "KELUAR", count = stats.outCount, color = Color(0xFFEF4444))
+                        com.dev.scanlaptop.ui.components.StatusChipMini(
+                            label = "KELUAR",
+                            count = if (isAnalyticsLoading) 0 else filteredMiniStats.outCount,
+                            color = Color(0xFFEF4444)
+                        )
                     }
                 }
                 
-                // --- Mini Sparkline (Aktivitas 7 Hari Terakhir) ---
+                // --- Mini Sparkline Slider Filter ---
                 Spacer(modifier = Modifier.height(16.dp))
                 com.dev.scanlaptop.ui.components.MiniSparkline(
                     historyList = analyticsData,
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
+                    selectedPeriod = miniChartPeriod,
+                    isLoading = isAnalyticsLoading,
+                    onPeriodSelect = { miniChartPeriod = it }
                 )
             }
         }

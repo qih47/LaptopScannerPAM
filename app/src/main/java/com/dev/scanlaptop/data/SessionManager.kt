@@ -3,6 +3,7 @@ package com.dev.scanlaptop.data
 import android.content.Context
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
@@ -19,7 +20,9 @@ class SessionManager(private val context: Context) {
         private val ROLE_KEY = stringPreferencesKey("role")
         private val FOTO_KEY = stringPreferencesKey("foto_profil")
         private val BIOMETRIC_KEY = booleanPreferencesKey("biometric_enabled")
+        private val PUSH_NOTIF_KEY = booleanPreferencesKey("push_notif_enabled")
         private val IS_LOGGED_IN_KEY = booleanPreferencesKey("is_logged_in")
+        private val LAST_SEEN_VERSION_KEY = intPreferencesKey("last_seen_version_code")
     }
 
     // Fungsi Simpan Session (Dipanggil pas Login Sukses)
@@ -79,10 +82,34 @@ class SessionManager(private val context: Context) {
         }
     }
 
+    // Ambil preferensi push notification
+    val pushNotifEnabledFlow: Flow<Boolean> = context.dataStore.data.map { pref ->
+        pref[PUSH_NOTIF_KEY] ?: false
+    }
+
+    // Set preferensi push notification
+    suspend fun setPushNotifEnabled(enabled: Boolean) {
+        context.dataStore.edit { pref ->
+            pref[PUSH_NOTIF_KEY] = enabled
+        }
+    }
+
     // Fungsi Logout (Cuma ubah status login, data biometrik tetap aman)
     suspend fun clearSession() {
         context.dataStore.edit { pref -> 
             pref[IS_LOGGED_IN_KEY] = false 
+        }
+    }
+
+    // Ambil preferensi last seen version code
+    val lastSeenVersionCodeFlow: Flow<Int> = context.dataStore.data.map { pref ->
+        pref[LAST_SEEN_VERSION_KEY] ?: 0
+    }
+
+    // Set preferensi last seen version code
+    suspend fun setLastSeenVersionCode(versionCode: Int) {
+        context.dataStore.edit { pref ->
+            pref[LAST_SEEN_VERSION_KEY] = versionCode
         }
     }
 }

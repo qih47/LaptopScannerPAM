@@ -59,6 +59,11 @@ class DetailLaptopViewModel(application: Application) : AndroidViewModel(applica
      * Otomatis deteksi apakah laptopUuid adalah UUID atau QR code.
      */
     fun loadData(laptopUuid: String) {
+        // Mencegah reload jika data yang sama sudah ada (misal saat back dari LogDetailScreen)
+        if (_laptop.value != null && (_laptop.value?.uuid == laptopUuid || _laptop.value?.no_registrasi == laptopUuid)) {
+            return
+        }
+        
         viewModelScope.launch {
             _isLoading.value = true
             _errorMessage.value = null
@@ -101,18 +106,30 @@ class DetailLaptopViewModel(application: Application) : AndroidViewModel(applica
             _isSaving.value = true
             _saveResult.value = null
             try {
-                // Tentukan status target dari perangkat pertama yang dipilih
+                // Validasi: Semua perangkat yang dipilih harus memiliki status yang sama
                 val firstSn = selectedSerialNumbers.first()
                 val firstDev = currentLaptop.daftar_perangkat.find { it.no_seri == firstSn }
                 val localStatus = firstDev?.status_terakhir ?: "OUT"
+
+                val hasMixedStatus = selectedSerialNumbers.any { sn ->
+                    val dev = currentLaptop.daftar_perangkat.find { it.no_seri == sn }
+                    (dev?.status_terakhir ?: "OUT") != localStatus
+                }
+
+                if (hasMixedStatus) {
+                    _saveResult.value = SaveResult.Error(
+                        "Perhatian: Anda memilih perangkat dengan status berbeda (ada yang Di Dalam dan Di Luar). Harap pilih perangkat dengan status yang sama."
+                    )
+                    return@launch
+                }
+
                 val expectedNewStatus = if (localStatus == "IN") "OUT" else "IN"
 
-                // [PRE-FLIGHT CHECK] Cek status aktual SEMUA perangkat yang dipilih dari Supabase
-                // Ini mencegah race condition jika petugas lain scan perangkat yang sama
+                // [PRE-FLIGHT CHECK] Cek status aktual SEMUA perangkat dari Supabase (SOT mutlak per perangkat)
                 val conflictSn = selectedSerialNumbers.firstOrNull { sn ->
                     val freshStatus = laptopRepository.getDeviceLatestStatus(sn) ?: localStatus
-                    // Ada konflik jika status aktual sudah sama dengan yang mau kita tuju
-                    freshStatus == expectedNewStatus
+                    // Konflik terjadi hanya jika status aktual di Supabase sudah berubah (tidak sama dengan localStatus)
+                    freshStatus != localStatus
                 }
 
                 if (conflictSn != null) {

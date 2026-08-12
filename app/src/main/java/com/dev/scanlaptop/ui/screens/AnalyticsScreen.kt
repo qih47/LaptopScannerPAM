@@ -3,10 +3,12 @@ package com.dev.scanlaptop.ui.screens
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -19,6 +21,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -61,17 +64,19 @@ fun AnalyticsScreen(
     navyGradient: Brush,
     isLoading: Boolean = false,
     isRefreshing: Boolean = false,
+    isAnalyticsLoading: Boolean = false,
     onRefresh: () -> Unit = {},
     onChartDaysChange: (Int) -> Unit = {}
 ) {
     val context = LocalContext.current
     var chartDays by remember { mutableIntStateOf(7) }
 
-    // Re-fetch data dari server saat filter periode berubah
+    // Re-fetch data dari server saat filter periode berubah (di background tanpa memblokir UI)
     LaunchedEffect(chartDays) {
         onChartDaysChange(chartDays)
     }
-    // Compute data analytics dari historyList
+
+    // Compute data analytics secara instan dari historyList
     val dayStats = remember(historyList, chartDays) { computeDayStats(historyList, chartDays) }
     val topDivisi = remember(historyList) { computeTopDivisi(historyList) }
     val totalMingguIni = remember(dayStats) { dayStats.sumOf { it.inCount + it.outCount } }
@@ -105,6 +110,7 @@ fun AnalyticsScreen(
         Box(
             modifier = Modifier
                 .fillMaxWidth()
+                .clip(RoundedCornerShape(bottomStart = 16.dp, bottomEnd = 16.dp))
                 .background(navyGradient)
                 .statusBarsPadding()
                 .padding(horizontal = 20.dp, vertical = 16.dp)
@@ -124,7 +130,7 @@ fun AnalyticsScreen(
         }
 
         Column(modifier = Modifier.padding(16.dp)) {
-            if (isLoading || isRefreshing) {
+            if (isLoading || isRefreshing || isAnalyticsLoading) {
                 AnalyticsSkeleton()
             } else {            // ─── Summary Cards ─────────────────────────────────
             Row(
@@ -227,7 +233,7 @@ fun AnalyticsScreen(
                     } else {
                         BarChart(
                             dayStats = dayStats,
-                            modifier = Modifier.fillMaxWidth().height(160.dp)
+                            modifier = Modifier.fillMaxWidth().height(220.dp)
                         )
                         Spacer(modifier = Modifier.height(8.dp))
                         // X axis labels
@@ -384,66 +390,107 @@ fun BarChart(dayStats: List<DayStats>, modifier: Modifier = Modifier) {
     val greenColor = Color(0xFF10B981)
     val redColor = Color(0xFFEF4444)
     val gridColor = Color(0xFFE2E8F0)
+    val highlightColor = Color(0x1A1E293B)
 
+    var selectedIndex by remember(dayStats) { mutableStateOf<Int?>(null) }
     val maxVal = dayStats.maxOf { it.inCount + it.outCount }.coerceAtLeast(1)
 
-    val textPaint = remember {
-        Paint().apply {
-            color = android.graphics.Color.DKGRAY
-            textSize = 30f // sekitar 10sp-12sp
-            textAlign = Paint.Align.CENTER
-            isAntiAlias = true
-            isFakeBoldText = true
+    Column(modifier = modifier) {
+        // Kotak Tooltip Interaktif jika batang diklik
+        val selectedStat = selectedIndex?.let { dayStats.getOrNull(it) }
+        if (selectedStat != null) {
+            Surface(
+                color = Color(0xFF1E293B),
+                shape = RoundedCornerShape(8.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 8.dp)
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        "📅 ${selectedStat.label} (${selectedStat.date.format(DateTimeFormatter.ofPattern("dd MMM"))})",
+                        color = Color.White,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Text("🟢 MASUK: ${selectedStat.inCount}", color = Color(0xFF10B981), fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        Text("🔴 KELUAR: ${selectedStat.outCount}", color = Color(0xFFEF4444), fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        Text("TOTAL: ${selectedStat.inCount + selectedStat.outCount}", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Black)
+                    }
+                }
+            }
+        } else {
+            Text(
+                "💡 Ketuk batang grafik di bawah untuk melihat rincian angka",
+                fontSize = 11.sp,
+                color = Color(0xFF64748B),
+                modifier = Modifier.padding(bottom = 8.dp)
+            )
         }
-    }
 
-    Canvas(modifier = modifier) {
-        val barGroupWidth = size.width / dayStats.size
-        val barWidth = barGroupWidth * 0.3f
-        val maxBarHeight = size.height * 0.85f
-        val baseY = size.height
+        Canvas(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f)
+                .pointerInput(dayStats) {
+                    detectTapGestures { tapOffset ->
+                        val barGroupWidth = size.width / dayStats.size
+                        val idx = (tapOffset.x / barGroupWidth).toInt().coerceIn(0, dayStats.size - 1)
+                        selectedIndex = if (selectedIndex == idx) null else idx
+                    }
+                }
+        ) {
+            val barGroupWidth = size.width / dayStats.size
+            val barWidth = barGroupWidth * 0.3f
+            val maxBarHeight = size.height * 0.9f
+            val baseY = size.height
 
-        // Grid lines
-        for (i in 1..4) {
-            val y = size.height - (size.height * i / 4f) * 0.85f
-            drawLine(gridColor, Offset(0f, y), Offset(size.width, y), strokeWidth = 1.dp.toPx())
-        }
-
-        dayStats.forEachIndexed { index, day ->
-            val centerX = barGroupWidth * index + barGroupWidth / 2f
-
-            // Bar IN (kiri, hijau)
-            val inHeight = (day.inCount.toFloat() / maxVal) * maxBarHeight
-            if (inHeight > 0) {
-                drawRoundRect(
-                    color = greenColor,
-                    topLeft = Offset(centerX - barWidth - 2.dp.toPx(), baseY - inHeight),
-                    size = Size(barWidth, inHeight),
-                    cornerRadius = CornerRadius(3.dp.toPx())
-                )
-                drawContext.canvas.nativeCanvas.drawText(
-                    day.inCount.toString(),
-                    centerX - barWidth / 2f - 2.dp.toPx(),
-                    baseY - inHeight - 8.dp.toPx(),
-                    textPaint
-                )
+            // Grid lines
+            for (i in 1..4) {
+                val y = size.height - (size.height * i / 4f) * 0.9f
+                drawLine(gridColor, Offset(0f, y), Offset(size.width, y), strokeWidth = 1.dp.toPx())
             }
 
-            // Bar OUT (kanan, merah)
-            val outHeight = (day.outCount.toFloat() / maxVal) * maxBarHeight
-            if (outHeight > 0) {
-                drawRoundRect(
-                    color = redColor,
-                    topLeft = Offset(centerX + 2.dp.toPx(), baseY - outHeight),
-                    size = Size(barWidth, outHeight),
-                    cornerRadius = CornerRadius(3.dp.toPx())
-                )
-                drawContext.canvas.nativeCanvas.drawText(
-                    day.outCount.toString(),
-                    centerX + barWidth / 2f + 2.dp.toPx(),
-                    baseY - outHeight - 8.dp.toPx(),
-                    textPaint
-                )
+            dayStats.forEachIndexed { index, day ->
+                val centerX = barGroupWidth * index + barGroupWidth / 2f
+
+                // Highlight jika dipilih
+                if (selectedIndex == index) {
+                    drawRect(
+                        color = highlightColor,
+                        topLeft = Offset(barGroupWidth * index, 0f),
+                        size = Size(barGroupWidth, size.height)
+                    )
+                }
+
+                // Bar IN (kiri, hijau)
+                val inHeight = (day.inCount.toFloat() / maxVal) * maxBarHeight
+                if (inHeight > 0) {
+                    drawRoundRect(
+                        color = greenColor,
+                        topLeft = Offset(centerX - barWidth - 2.dp.toPx(), baseY - inHeight),
+                        size = Size(barWidth, inHeight),
+                        cornerRadius = CornerRadius(3.dp.toPx())
+                    )
+                }
+
+                // Bar OUT (kanan, merah)
+                val outHeight = (day.outCount.toFloat() / maxVal) * maxBarHeight
+                if (outHeight > 0) {
+                    drawRoundRect(
+                        color = redColor,
+                        topLeft = Offset(centerX + 2.dp.toPx(), baseY - outHeight),
+                        size = Size(barWidth, outHeight),
+                        cornerRadius = CornerRadius(3.dp.toPx())
+                    )
+                }
             }
         }
     }

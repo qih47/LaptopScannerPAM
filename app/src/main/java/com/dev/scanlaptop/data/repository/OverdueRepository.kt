@@ -190,7 +190,11 @@ class OverdueRepository {
                         kepemilikan = laptopInfo?.kepemilikan ?: "-",
                         lastInTime = targetLog?.created_at,
                         durasiJam = durasiJam,
-                        perangkatList = devices.mapNotNull { it.no_seri },
+                        perangkatList = devices.mapNotNull { 
+                            val merk = it.merk?.takeIf { m -> m.isNotBlank() } ?: "Perangkat"
+                            val sn = it.no_seri?.takeIf { s -> s.isNotBlank() } ?: "-"
+                            "$merk - S/N: $sn"
+                        },
                         namaPetugasIn = petugasName,
                         type = overdueType
                     )

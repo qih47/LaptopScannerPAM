@@ -173,6 +173,20 @@ class MonitoringRepository {
         }
     }
 
+    /** Ambil riwayat khusus milik petugas yang sedang login (berdasarkan NPP). */
+    suspend fun fetchHistoryByPetugas(npp: String): List<HistoryLog> {
+        return try {
+            SupabaseConfig.client.from("monitoring_inout")
+                .select(columns = HISTORY_COLUMNS) {
+                    filter { eq("petugas_npp", npp) }
+                    order(column = "created_at", order = Order.DESCENDING)
+                }
+                .decodeList<HistoryLog>()
+        } catch (e: Exception) {
+            Log.e(TAG, "fetchHistoryByPetugas error: ${e.message}")
+            emptyList()
+        }
+    }
     /**
      * Ambil transaksi terbaru untuk deteksi overdue.
      * Mengambil semua log OUT dalam rentang waktu tertentu.
@@ -181,27 +195,32 @@ class MonitoringRepository {
         return try {
             val now = LocalDate.now()
             val formatter = DateTimeFormatter.ISO_LOCAL_DATE
-            val startDate = "${now.minusDays(daysBack.toLong()).format(formatter)}T00:00:00Z"
+            val startDate = if (daysBack > 0 && daysBack < 365) {
+                "${now.minusDays(daysBack.toLong()).format(formatter)}T00:00:00Z"
+            } else null
 
-            // Limit dinamis: makin lama periode, makin besar limit-nya
-            val dynamicLimit = when {
-                daysBack <= 1   -> 500L
-                daysBack <= 7   -> 2000L
-                daysBack <= 30  -> 5000L
-                else            -> 20000L  // 365 hari / 12 bulan
-            }
+            val allLogs = mutableListOf<HistoryLog>()
+            var offset = 0L
+            val pageSize = 1000L
 
-            SupabaseConfig.client.from("monitoring_inout")
-                .select(columns = HISTORY_COLUMNS) {
-                    order("created_at", order = Order.DESCENDING)
-                    filter {
-                        and {
-                            gte("created_at", startDate)
+            while (true) {
+                val chunk = SupabaseConfig.client.from("monitoring_inout")
+                    .select(columns = HISTORY_COLUMNS) {
+                        order("created_at", order = Order.DESCENDING)
+                        if (startDate != null) {
+                            filter {
+                                gte("created_at", startDate)
+                            }
                         }
+                        range(offset, offset + pageSize - 1)
                     }
-                    limit(dynamicLimit)
-                }
-                .decodeList<HistoryLog>()
+                    .decodeList<HistoryLog>()
+
+                allLogs.addAll(chunk)
+                if (chunk.size < pageSize) break
+                offset += pageSize
+            }
+            allLogs
         } catch (e: Exception) {
             Log.e(TAG, "fetchRecentLogs error: ${e.message}")
             emptyList()

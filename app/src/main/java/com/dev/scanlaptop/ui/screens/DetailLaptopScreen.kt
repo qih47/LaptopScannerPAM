@@ -13,11 +13,13 @@ import androidx.compose.material.icons.automirrored.filled.Login
 import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
+import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -31,8 +33,11 @@ import com.dev.scanlaptop.data.UserData
 import com.dev.scanlaptop.ui.viewmodel.DetailLaptopViewModel
 import com.dev.scanlaptop.ui.viewmodel.SaveResult
 import com.dev.scanlaptop.utils.FeedbackHelper
+import java.time.Duration
 import java.time.LocalDate
+import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
+import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -241,17 +246,6 @@ fun DetailLaptopScreen(
 
     // ─── Scaffold utama ────────────────────────────────────────
     Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("Detail Registrasi", fontWeight = FontWeight.ExtraBold, color = Color(0xFF1A237E)) },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, null, tint = Color(0xFF1A237E))
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.White)
-            )
-        },
         bottomBar = {
             if (!isLoading && laptop != null && !isFromHistoryList) {
                 Surface(tonalElevation = 12.dp, shadowElevation = 12.dp, color = Color.White) {
@@ -298,9 +292,9 @@ fun DetailLaptopScreen(
                 }
                 else -> {
                     Column(modifier = Modifier.fillMaxSize().verticalScroll(scrollState).background(Color(0xFFF0F2F5))) {
-                        LaptopHeaderSection(laptop, isExpired == true)
+                        LaptopHeaderSection(laptop, isExpired == true, onBack)
                         Column(modifier = Modifier.padding(16.dp)) {
-                            InfoSection(laptop)
+                            InfoSection(laptop, logs)
                             Spacer(modifier = Modifier.height(24.dp))
 
                             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -310,7 +304,19 @@ fun DetailLaptopScreen(
                             }
                             Spacer(modifier = Modifier.height(16.dp))
 
-                            TabRow(selectedTabIndex = selectedTabIndex, containerColor = Color.Transparent, contentColor = Color(0xFF1A237E)) {
+                            TabRow(
+                                selectedTabIndex = selectedTabIndex, 
+                                containerColor = Color.Transparent, 
+                                contentColor = Color(0xFF1A237E),
+                                indicator = { tabPositions ->
+                                    if (selectedTabIndex < tabPositions.size) {
+                                        TabRowDefaults.SecondaryIndicator(
+                                            modifier = Modifier.tabIndicatorOffset(tabPositions[selectedTabIndex]),
+                                            color = Color(0xFF1A237E)
+                                        )
+                                    }
+                                }
+                            ) {
                                 tabs.forEachIndexed { index, title ->
                                     Tab(
                                         selected = selectedTabIndex == index,
@@ -366,8 +372,41 @@ fun DetailLaptopScreen(
 // ─────────────────────────────────────────────────────────────
 
 @Composable
-fun InfoSection(laptop: LaptopDetail?) {
+fun InfoSection(laptop: LaptopDetail?, logs: List<HistoryLog> = emptyList()) {
     var isDeviceExpanded by remember { mutableStateOf(false) }
+
+    // Hitung status dan waktu terakhir
+    val latestLog = logs.firstOrNull()
+    val currentStatus = laptop?.daftar_perangkat?.firstOrNull()?.status_terakhir ?: latestLog?.status_io ?: "OUT"
+    val isInside = currentStatus == "IN"
+    val statusColor = if (isInside) Color(0xFF2E7D32) else Color(0xFFC62828)
+    val statusText = if (isInside) "DI DALAM AREA (IN)" else "DI LUAR AREA (OUT)"
+
+    // Hitung durasi dan waktu terformat
+    val timeInfo = remember(latestLog) {
+        latestLog?.created_at?.let { ts ->
+            try {
+                val zdt = ZonedDateTime.parse(ts)
+                val now = ZonedDateTime.now()
+                val dur = Duration.between(zdt, now)
+                val days = dur.toDays()
+                val hours = dur.toHours() % 24
+                val mins = dur.toMinutes() % 60
+
+                val formattedDate = zdt.format(DateTimeFormatter.ofPattern("dd MMM yyyy, HH:mm WIB", Locale("id", "ID")))
+                val durStr = when {
+                    days > 0 -> "$days hari $hours jam yang lalu"
+                    hours > 0 -> "$hours jam $mins menit yang lalu"
+                    else -> "$mins menit yang lalu"
+                }
+                Triple(formattedDate, durStr, days)
+            } catch (e: Exception) {
+                Triple(ts.take(16).replace("T", " "), "-", 0L)
+            }
+        } ?: Triple("Belum ada riwayat scan", "-", 0L)
+    }
+    val (lastScanDate, durationText, daysInside) = timeInfo
+
     Card(
         modifier = Modifier.offset(y = (-25).dp),
         shape = RoundedCornerShape(20.dp),
@@ -375,6 +414,91 @@ fun InfoSection(laptop: LaptopDetail?) {
         elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
     ) {
         Column(modifier = Modifier.padding(20.dp)) {
+            // ─── KARTU STATUS & DURASI TERKINI ─────────────────────────
+            Surface(
+                shape = RoundedCornerShape(14.dp),
+                color = statusColor.copy(alpha = 0.08f),
+                border = BorderStroke(1.5.dp, statusColor.copy(alpha = 0.4f)),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            if (isInside) Icons.Default.Login else Icons.Default.Logout,
+                            contentDescription = null,
+                            tint = statusColor,
+                            modifier = Modifier.size(22.dp)
+                        )
+                        Spacer(Modifier.width(10.dp))
+                        Text(
+                            text = "POSISI TERKINI: $statusText",
+                            fontWeight = FontWeight.Black,
+                            fontSize = 13.sp,
+                            color = statusColor
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Text(
+                        text = "Scan Terakhir : $lastScanDate",
+                        fontSize = 12.sp,
+                        color = Color.Black.copy(alpha = 0.8f),
+                        fontWeight = FontWeight.Bold
+                    )
+                    if (durationText != "-") {
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "Durasi : $durationText",
+                            fontSize = 12.sp,
+                            color = Color.DarkGray,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                }
+            }
+
+            // Badge peringatan mengendap jika di dalam area >= 1 hari
+            if (isInside && daysInside >= 1) {
+                Spacer(modifier = Modifier.height(12.dp))
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = Color(0xFFFFF8E1),
+                    border = BorderStroke(1.dp, Color(0xFFFFA000)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            Icons.Default.Warning,
+                            contentDescription = null,
+                            tint = Color(0xFFF57F17),
+                            modifier = Modifier.size(24.dp)
+                        )
+                        Spacer(Modifier.width(10.dp))
+                        Column {
+                            Text(
+                                text = "PERINGATAN MENGENDAP (${daysInside} HARI)",
+                                fontWeight = FontWeight.Black,
+                                fontSize = 12.sp,
+                                color = Color(0xFFE65100)
+                            )
+                            Spacer(Modifier.height(2.dp))
+                            Text(
+                                text = "Perangkat berada di dalam area melampaui 24 jam. Harap periksa alasan keterlambatan keluar.",
+                                fontSize = 11.sp,
+                                color = Color(0xFF795548),
+                                fontWeight = FontWeight.Medium
+                            )
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(20.dp))
+            HorizontalDivider(color = Color.Black.copy(alpha = 0.1f))
+            Spacer(modifier = Modifier.height(16.dp))
+
             Text("DOKUMEN REGISTRASI", fontSize = 13.sp, fontWeight = FontWeight.Black, color = Color(0xFF1A237E), letterSpacing = 1.5.sp)
             Spacer(modifier = Modifier.height(12.dp))
             Row(modifier = Modifier.fillMaxWidth()) {
@@ -463,11 +587,17 @@ fun DetailItemCompact(label: String, value: String?, icon: ImageVector) {
 }
 
 @Composable
-fun LaptopHeaderSection(laptop: LaptopDetail?, isExpired: Boolean) {
+fun LaptopHeaderSection(laptop: LaptopDetail?, isExpired: Boolean, onBack: () -> Unit) {
     val statusText = if (isExpired) "EXPIRED" else "BERLAKU"
     val badgeColor = if (isExpired) Color(0xFFFF5252) else Color(0xFF66BB6A)
-    Box(modifier = Modifier.fillMaxWidth().background(Brush.verticalGradient(listOf(Color(0xFF0D47A1), Color(0xFF001233)))).padding(bottom = 32.dp, top = 16.dp)) {
-        Column(modifier = Modifier.fillMaxWidth().padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+    Box(modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(bottomStart = 16.dp, bottomEnd = 16.dp)).background(Brush.verticalGradient(listOf(Color(0xFF0D47A1), Color(0xFF001233)))).padding(bottom = 32.dp)) {
+        IconButton(
+            onClick = onBack,
+            modifier = Modifier.align(Alignment.TopStart).statusBarsPadding().padding(start = 8.dp)
+        ) {
+            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Kembali", tint = Color.White)
+        }
+        Column(modifier = Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 24.dp).padding(top = 16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             Surface(shape = CircleShape, color = Color.White.copy(0.15f), modifier = Modifier.size(90.dp).border(2.dp, Color.White.copy(0.4f), CircleShape)) {
                 Icon(Icons.Default.Group, null, tint = Color.White, modifier = Modifier.padding(20.dp))
             }
@@ -492,22 +622,48 @@ fun LaptopHeaderSection(laptop: LaptopDetail?, isExpired: Boolean) {
 fun LogItemSmall(log: HistoryLog, onClick: () -> Unit) {
     val isEntry = log.status_io == "IN"
     val color = if (isEntry) Color(0xFF2E7D32) else Color(0xFFC62828)
+    val petugasNama = log.users?.nama_lengkap?.uppercase() ?: log.petugas_npp?.uppercase() ?: "TIDAK DIKETAHUI"
+    val keterangan = log.keterangan?.uppercase()?.takeIf { it.isNotBlank() } ?: "-"
+
     Card(
         modifier = Modifier.padding(vertical = 6.dp).fillMaxWidth().clickable { onClick() },
         shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(containerColor = Color.White),
         elevation = CardDefaults.cardElevation(2.dp)
     ) {
-        Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-            Surface(color = color, shape = CircleShape, modifier = Modifier.size(40.dp)) {
-                Icon(if (isEntry) Icons.AutoMirrored.Filled.Login else Icons.AutoMirrored.Filled.Logout, null, tint = Color.White, modifier = Modifier.padding(8.dp))
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Surface(color = color, shape = CircleShape, modifier = Modifier.size(36.dp)) {
+                    Icon(if (isEntry) Icons.AutoMirrored.Filled.Login else Icons.AutoMirrored.Filled.Logout, null, tint = Color.White, modifier = Modifier.padding(8.dp))
+                }
+                Spacer(modifier = Modifier.width(12.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(if (isEntry) "MASUK" else "KELUAR", fontWeight = FontWeight.Black, fontSize = 14.sp, color = color)
+                    Text(log.created_at.take(16).replace("T", "  |  "), fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color.Black.copy(alpha = 0.7f))
+                }
+                Icon(Icons.Default.ChevronRight, null, tint = Color.Black.copy(alpha = 0.5f))
             }
-            Spacer(modifier = Modifier.width(16.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(if (isEntry) "MASUK" else "KELUAR", fontWeight = FontWeight.Black, fontSize = 14.sp, color = color)
-                Text(log.created_at.take(16).replace("T", "  |  "), fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color.Black)
+            Spacer(modifier = Modifier.height(12.dp))
+            HorizontalDivider(color = Color.Black.copy(alpha = 0.05f))
+            Spacer(modifier = Modifier.height(12.dp))
+            
+            Row(verticalAlignment = Alignment.Top) {
+                Icon(Icons.Default.Badge, contentDescription = "Petugas", tint = Color(0xFF1A237E), modifier = Modifier.size(16.dp))
+                Spacer(modifier = Modifier.width(8.dp))
+                Column {
+                    Text("PETUGAS", fontSize = 9.sp, fontWeight = FontWeight.ExtraBold, color = Color.Gray)
+                    Text(petugasNama, fontSize = 12.sp, fontWeight = FontWeight.Black, color = Color.Black)
+                }
             }
-            Icon(Icons.Default.ChevronRight, null, tint = Color.Black.copy(alpha = 0.5f))
+            Spacer(modifier = Modifier.height(8.dp))
+            Row(verticalAlignment = Alignment.Top) {
+                Icon(Icons.Default.Note, contentDescription = "Catatan", tint = Color(0xFF1A237E), modifier = Modifier.size(16.dp))
+                Spacer(modifier = Modifier.width(8.dp))
+                Column {
+                    Text("CATATAN", fontSize = 9.sp, fontWeight = FontWeight.ExtraBold, color = Color.Gray)
+                    Text(keterangan, fontSize = 12.sp, fontWeight = FontWeight.Black, color = Color.Black)
+                }
+            }
         }
     }
 }

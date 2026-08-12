@@ -37,7 +37,18 @@ fun HistoryCardPro(
     var hasFetchedPaired by remember { mutableStateOf(false) }
     val statusColor = if (log.status_io == "IN") Color(0xFF10B981) else Color(0xFFEF4444)
     val statusText = if (log.status_io == "IN") "MASUK" else "KELUAR"
-    val showNewLabel = log.isOpen == 0
+    val showNewLabel = remember(log.isOpen, log.created_at) {
+        if (log.isOpen == 0) {
+            try {
+                val logTime = java.time.ZonedDateTime.parse(log.created_at).toInstant().toEpochMilli()
+                (System.currentTimeMillis() - logTime) <= 1800_000L // 30 menit
+            } catch (e: Exception) {
+                true
+            }
+        } else {
+            false
+        }
+    }
 
     Card(
         modifier = Modifier

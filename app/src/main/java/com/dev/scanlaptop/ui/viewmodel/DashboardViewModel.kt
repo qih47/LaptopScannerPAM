@@ -14,6 +14,8 @@ import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.delay
 
 class DashboardViewModel : ViewModel() {
 
@@ -32,6 +34,9 @@ class DashboardViewModel : ViewModel() {
     // Data khusus analytics — 7 hari penuh, tidak terpotong pagination
     private val _analyticsData = MutableStateFlow<List<HistoryLog>>(emptyList())
     val analyticsData: StateFlow<List<HistoryLog>> = _analyticsData.asStateFlow()
+
+    private val _isAnalyticsLoading = MutableStateFlow(false)
+    val isAnalyticsLoading: StateFlow<Boolean> = _isAnalyticsLoading.asStateFlow()
 
     // ─── State Loading ────────────────────────────────────────
     private val _isLoading = MutableStateFlow(false)
@@ -71,6 +76,29 @@ class DashboardViewModel : ViewModel() {
     private var currentPage: Int = 0
 
     private var realtimeChannel: RealtimeChannel? = null
+
+    // Antrian (Queue) untuk log realtime masuk
+    private val pendingLogsQueue = Channel<HistoryLog>(Channel.UNLIMITED)
+
+    init {
+        // Coroutine untuk memproses antrian satu per satu dengan jeda
+        viewModelScope.launch {
+            for (newLog in pendingLogsQueue) {
+                _historyList.value = listOf(newLog) + _historyList.value
+                _stats.value = _stats.value.copy(
+                    total = _stats.value.total + 1,
+                    inCount = if (newLog.status_io == "IN") _stats.value.inCount + 1 else _stats.value.inCount,
+                    outCount = if (newLog.status_io == "OUT") _stats.value.outCount + 1 else _stats.value.outCount
+                )
+                _analyticsData.value = listOf(newLog) + _analyticsData.value
+                _newTransactionEvent.value = newLog
+                _newTransactionCount.value = _newTransactionCount.value + 1
+                
+                // Jeda 350ms agar list tidak force close saat di-spam data banyak
+                delay(350)
+            }
+        }
+    }
 
     // ─────────────────────────────────────────────────────────
     // PUBLIC ACTIONS
@@ -162,11 +190,14 @@ class DashboardViewModel : ViewModel() {
     /** Load data khusus analytics — tidak dibatasi pagination, tergantung periode. */
     fun loadAnalyticsData(daysBack: Int = 7) {
         viewModelScope.launch {
+            _isAnalyticsLoading.value = true
             try {
                 val data = repository.fetchRecentLogs(daysBack)
                 _analyticsData.value = data
             } catch (e: Exception) {
                 // silent fail — analytics data tidak kritikal
+            } finally {
+                _isAnalyticsLoading.value = false
             }
         }
     }
@@ -214,15 +245,8 @@ class DashboardViewModel : ViewModel() {
                 // 3. Baru collect — setelah channel dipastikan subscribed
                 flow
                     .onEach { newLog ->
-                        _historyList.value = listOf(newLog) + _historyList.value
-                        _stats.value = _stats.value.copy(
-                            total = _stats.value.total + 1,
-                            inCount = if (newLog.status_io == "IN") _stats.value.inCount + 1 else _stats.value.inCount,
-                            outCount = if (newLog.status_io == "OUT") _stats.value.outCount + 1 else _stats.value.outCount
-                        )
-                        _analyticsData.value = listOf(newLog) + _analyticsData.value
-                        _newTransactionEvent.value = newLog
-                        _newTransactionCount.value = _newTransactionCount.value + 1
+                        // Masukkan ke antrian, jangan langsung update state di sini
+                        pendingLogsQueue.send(newLog)
                         _isRealtimeConnected.value = true
                     }
                     .catch { e ->
