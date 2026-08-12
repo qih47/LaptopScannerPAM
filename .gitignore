@@ -53,3 +53,15 @@ fix_analytics.py
 captures/
 .externalNativeBuild
 .cxx
+
+# APK and Large Files
+apk/
+*.apk
+*.aab
+outputs/apk/
+
+app/apk/
+
+release/
+app/release/
+
